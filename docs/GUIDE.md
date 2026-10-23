@@ -44,8 +44,8 @@ also checks it and shows a warning if it does not match.
 The client reads everything from `/storage/emulated/0/GTA/`:
 
 * the game data from your own copy of GTA SA for Android;
-* `GTA/SAMP/settings.ini`. **The game closes right away if this file is
-  missing.** A minimal one:
+* `GTA/SAMP/settings.ini`. The app creates a basic one on first launch;
+  edit it to set your name and server:
 
   ```ini
   [client]

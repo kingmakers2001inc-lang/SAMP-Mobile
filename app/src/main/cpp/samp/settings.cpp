@@ -5,6 +5,8 @@
 #include "vendor/SimpleIni/SimpleIni.h"
 #include "game/game.h"
 
+#include <sys/stat.h>
+
 extern CGame *pGame;
 
 CSettings::CSettings()
@@ -13,6 +15,20 @@ CSettings::CSettings()
 
 	char buff[0x7F];
 	sprintf(buff, "/storage/emulated/0/GTA/SAMP/settings.ini");
+
+	// First launch: create a default settings.ini instead of closing the game
+	if (access(buff, F_OK) != 0)
+	{
+		mkdir("/storage/emulated/0/GTA", 0777);
+		mkdir("/storage/emulated/0/GTA/SAMP", 0777);
+		FILE* file = fopen(buff, "w");
+		if (file != nullptr)
+		{
+			fprintf(file, "[client]\nname=Player%d\n", rand() % 10000);
+			fclose(file);
+			Log("Created default %s", buff);
+		}
+	}
 
 	INIReader reader(buff);
 
