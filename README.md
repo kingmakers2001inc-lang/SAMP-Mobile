@@ -21,6 +21,32 @@ Choose the version you need:
 
 [Open GTA-2.10 branch](https://github.com/kuzia15/SAMP-Mobile/tree/GTA-2.10)
 
+## Building on an Android phone (no PC)
+
+This branch contains the **SA-MP 2.11** client sources. Every push is built
+by GitHub Actions in the cloud (`.github/workflows/build-apk.yml`), so you only
+need a phone:
+
+1. Edit the code (in the GitHub app, in a browser or in Termux with
+   `pkg install git` then `git clone` and `git push`).
+2. Push. Open the **Actions** tab, select the latest **Build APK** run and
+   download the `samp-mobile-debug-apk` artifact.
+3. Install the APK and put the game cache in `/storage/emulated/0/GTA/`.
+
+### Game files
+
+`libGame.so` (the GTA SA engine) and the game data belong to Rockstar Games
+and are **not** stored in this repository. Take them from your own legally
+purchased copy of GTA SA for Android:
+
+* Upload your `libGame.so` somewhere private with a direct-download link,
+  then add that link as a repository secret named `GAME_LIB_URL`
+  (**Settings → Secrets and variables → Actions**). The build packs it into
+  the APK. Without it the APK builds but the game will not start.
+* Never commit game files or share an APK that contains them.
+
+Client details: [docs/CLIENT-2.11.md](docs/CLIENT-2.11.md).
+
 ## Repository Structure
 
 The `main` branch contains general project information.
