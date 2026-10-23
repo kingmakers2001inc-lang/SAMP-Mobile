@@ -35,6 +35,16 @@ CSettings::CSettings()
     length = reader.Get("client", "version", "0.3.7").copy(m_Settings.szVersion, MAX_SETTINGS_STRING);
     m_Settings.szVersion[length] = '\0';
 	m_Settings.iPort = reader.GetInteger("client", "port", 1417);
+#ifdef KM_SERVER_HOST
+	// Built-in server overrides settings.ini
+	length = std::string(KM_SERVER_HOST).copy(m_Settings.szHost, MAX_SETTINGS_STRING);
+	m_Settings.szHost[length] = '\0';
+#ifdef KM_SERVER_PORT
+	m_Settings.iPort = KM_SERVER_PORT;
+#else
+	m_Settings.iPort = 7777;
+#endif
+#endif
     m_Settings.bAutoAim = reader.GetBoolean("client", "autoaim", false);
 
 	// debug

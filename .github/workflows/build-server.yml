@@ -24,13 +24,8 @@ jobs:
       - name: Build server
         run: server/build.sh "$RUNNER_TEMP/kingmakers-server"
 
-      - name: Smoke test
-        run: |
-          cd "$RUNNER_TEMP/kingmakers-server"
-          timeout 10 ./omp-server > server.log 2>&1 || true
-          cat server.log
-          grep -q "Kingmakers RP gamemode loaded" server.log
-          rm -f server.log log.txt
+      - name: Test gamemode
+        run: server/tests/run.sh "$RUNNER_TEMP/kingmakers-server"
 
       - uses: actions/upload-artifact@v4
         with:

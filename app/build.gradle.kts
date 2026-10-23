@@ -20,6 +20,19 @@ android {
             abiFilters.add("arm64-v8a")
         }
 
+        // Built-in server: set SERVER_HOST (and optionally SERVER_PORT) as
+        // environment variables or Gradle properties to make the client always
+        // connect there instead of the host in settings.ini.
+        val serverHost = (findProperty("SERVER_HOST") as String?) ?: System.getenv("SERVER_HOST") ?: ""
+        val serverPort = (findProperty("SERVER_PORT") as String?) ?: System.getenv("SERVER_PORT") ?: ""
+        require(serverHost.matches(Regex("[A-Za-z0-9.-]*"))) { "SERVER_HOST must be an IP or hostname" }
+        require(serverPort.matches(Regex("[0-9]{0,5}"))) { "SERVER_PORT must be a number" }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DKM_SERVER_HOST=$serverHost", "-DKM_SERVER_PORT=$serverPort")
+            }
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
