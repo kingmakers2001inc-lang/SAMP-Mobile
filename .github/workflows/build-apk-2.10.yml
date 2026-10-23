@@ -1,0 +1,77 @@
+name: Build APK (2.10)
+
+on:
+  push:
+    paths: ["client-2.10/**", ".github/workflows/build-apk-2.10.yml"]
+  pull_request:
+    paths: ["client-2.10/**", ".github/workflows/build-apk-2.10.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: client-2.10
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;26.2.11394342" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0"
+
+      # The game engine and assets come from your own GTA SA APK, never from
+      # this repository. Set the GTA_APK_URLS secret to private direct-download
+      # links (separated by spaces) of the APK files of your Google Play install,
+      # e.g. base.apk and split_config.arm64_v8a.apk.
+      - name: Add game files from your GTA SA APK
+        env:
+          GTA_APK_URLS: ${{ secrets.GTA_APK_URLS }}
+        run: |
+          if [ -z "$GTA_APK_URLS" ]; then
+            echo "::warning::GTA_APK_URLS secret is not set; the APK is built without the game and will not start."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/gta" app/src/main/jniLibs/arm64-v8a
+          i=0
+          for url in $GTA_APK_URLS; do
+            i=$((i + 1))
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/gta/$i.apk" "$url"
+            unzip -qo "$RUNNER_TEMP/gta/$i.apk" 'lib/arm64-v8a/*' 'assets/*' -d "$RUNNER_TEMP/gta/files" || true
+          done
+          for lib in libGTASA.so libSCAnd.so libImmEmulatorJ.so; do
+            [ -f "$RUNNER_TEMP/gta/files/lib/arm64-v8a/$lib" ] && cp "$RUNNER_TEMP/gta/files/lib/arm64-v8a/$lib" app/src/main/jniLibs/arm64-v8a/
+          done
+          if [ ! -f app/src/main/jniLibs/arm64-v8a/libGTASA.so ]; then
+            echo "::error::No lib/arm64-v8a/libGTASA.so in the GTA SA APK files. Add the split APK whose name contains arm64."
+            exit 1
+          fi
+          python3 tools/check_engine.py app/src/main/jniLibs/arm64-v8a/libGTASA.so
+          # Game assets; keep this client's own settings.ini
+          if [ -d "$RUNNER_TEMP/gta/files/assets" ]; then
+            cp -rn "$RUNNER_TEMP/gta/files/assets/." app/src/main/assets/
+          fi
+          ls -l app/src/main/jniLibs/arm64-v8a
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kingmakers-2.10-debug-apk
+          path: client-2.10/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

@@ -2,9 +2,9 @@ name: Build APK
 
 on:
   push:
-    paths-ignore: ["server/**", ".github/workflows/build-server.yml"]
+    paths-ignore: ["server/**", "client-2.10/**", ".github/workflows/build-server.yml", ".github/workflows/build-apk-2.10.yml"]
   pull_request:
-    paths-ignore: ["server/**", ".github/workflows/build-server.yml"]
+    paths-ignore: ["server/**", "client-2.10/**", ".github/workflows/build-server.yml", ".github/workflows/build-apk-2.10.yml"]
   workflow_dispatch:
 
 jobs:
