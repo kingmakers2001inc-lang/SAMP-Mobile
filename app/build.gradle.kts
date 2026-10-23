@@ -1,7 +1,5 @@
 plugins {
     id("com.android.application")
-    id("com.google.gms.google-services")
-    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -10,7 +8,7 @@ android {
     namespace = "com.gta.game"
 
     defaultConfig {
-        applicationId = "com.gta.game"
+        applicationId = "com.kingmakers.samp"
         minSdk = 28
         targetSdk = 36
         versionCode = 1
@@ -47,7 +45,7 @@ android {
 
     applicationVariants.all {
         outputs.all {
-            val apkName = "GTA-2.11-${buildType.name}.apk"
+            val apkName = "KingmakersRP-${buildType.name}.apk"
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = apkName
         }
     }
@@ -66,12 +64,6 @@ android {
             }
         }
         release {
-            firebaseCrashlytics {
-                nativeSymbolUploadEnabled = true
-                strippedNativeLibsDir = "build/intermediates/stripped_native_libs/release/out/lib"
-                unstrippedNativeLibsDir = "build/intermediates/merged_native_libs/release/out/lib"
-            }
-
             ndk {
                 debugSymbolLevel = "FULL"
             }
@@ -115,11 +107,6 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     implementation("com.android.volley:volley:1.2.1")
     implementation("com.intuit.sdp:sdp-android:1.1.0")
-    implementation("com.google.firebase:firebase-analytics")
-    //implementation("com.google.firebase:firebase-crashlytics-ndk")
-    implementation(platform("com.google.firebase:firebase-bom:34.13.0"))
-    implementation("com.google.firebase:firebase-messaging")
-    implementation("com.google.firebase:firebase-config")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.datastore:datastore-core:1.0.0")
     implementation("org.ini4j:ini4j:0.5.4")
