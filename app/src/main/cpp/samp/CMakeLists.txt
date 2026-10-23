@@ -35,6 +35,14 @@ include_directories(
 )
 
 add_library(samp SHARED ${SOURCES})
+
+# Built-in server address, passed from Gradle (see app/build.gradle.kts)
+if(KM_SERVER_HOST)
+    target_compile_definitions(samp PRIVATE KM_SERVER_HOST="${KM_SERVER_HOST}")
+    if(KM_SERVER_PORT)
+        target_compile_definitions(samp PRIVATE KM_SERVER_PORT=${KM_SERVER_PORT})
+    endif()
+endif()
 target_link_libraries(samp
         log
         android

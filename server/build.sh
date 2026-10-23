@@ -17,7 +17,7 @@ curl -fsSL "https://github.com/openmultiplayer/open.mp/releases/download/$OMP_VE
 rm -f "$OUT"/gamemodes/* "$OUT"/filterscripts/*
 LD_LIBRARY_PATH="$OUT/qawno" "$OUT/qawno/pawncc" "$HERE/gamemodes/kingmakers.pwn" \
   -i"$OUT/qawno/include" -o"$OUT/gamemodes/kingmakers.amx" -d0 -O1
-cp "$HERE/gamemodes/kingmakers.pwn" "$OUT/gamemodes/"
+cp "$HERE"/gamemodes/*.pwn "$HERE"/gamemodes/*.inc "$OUT/gamemodes/"
 
 jq '.name = "Kingmakers RP"
   | .language = "English"

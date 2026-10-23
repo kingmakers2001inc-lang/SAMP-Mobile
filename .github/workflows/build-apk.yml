@@ -38,11 +38,22 @@ jobs:
           if [ -n "$GAME_LIB_URL" ]; then
             curl -fL --retry 3 -o app/src/main/jniLibs/arm64-v8a/libGame.so "$GAME_LIB_URL"
             echo "libGame.so added ($(stat -c %s app/src/main/jniLibs/arm64-v8a/libGame.so) bytes)"
+            # The client uses fixed memory addresses inside this exact engine build
+            expected=4c6a7445e30b27afdda781302e4db9bac89c28fc1181b68b1eef16f84d6a282e
+            actual=$(sha256sum app/src/main/jniLibs/arm64-v8a/libGame.so | cut -d' ' -f1)
+            if [ "$actual" != "$expected" ]; then
+              echo "::warning::libGame.so does not match the engine build this client was made for (sha256 $actual). The game will most likely crash on start."
+            fi
           else
             echo "::warning::GAME_LIB_URL secret is not set; the APK is built without libGame.so and will not start until you add it."
           fi
 
+      # Optional built-in server: set the SERVER_HOST / SERVER_PORT repository
+      # variables (Settings > Secrets and variables > Actions > Variables).
       - name: Build debug APK
+        env:
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          SERVER_PORT: ${{ vars.SERVER_PORT }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug

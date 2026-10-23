@@ -23,6 +23,9 @@ Choose the version you need:
 
 ## Building on an Android phone (no PC)
 
+**Step-by-step guide: [docs/GUIDE.md](docs/GUIDE.md)** (testing the APK,
+renting a server, making yourself admin, built-in server address).
+
 This branch contains the **SA-MP 2.11** client sources. Every push is built
 by GitHub Actions in the cloud (`.github/workflows/build-apk.yml`), so you only
 need a phone:
@@ -52,7 +55,8 @@ Client details: [docs/CLIENT-2.11.md](docs/CLIENT-2.11.md).
 The `server/` folder holds the **Kingmakers RP** server: a starter gamemode
 (`server/gamemodes/kingmakers.pwn`) for the open-source
 [open.mp](https://open.mp) server. Every change in `server/` is compiled and
-smoke-tested by the **Build Server** action, which uploads a ready-to-run
+tested by the **Build Server** action (an NPC registers, logs in and runs
+commands), which uploads a ready-to-run
 Linux server as the `kingmakers-server-linux` artifact.
 
 The server only runs on x86 Linux, not on a phone, so rent a small
@@ -68,7 +72,12 @@ and keeps your `config.json` and `scriptfiles/` across updates. To install
 from a branch that is not merged yet, add `BRANCH=<branch-name>` in front of `bash`.
 Players connect to `<vps-ip>:7777`.
 
-Gamemode commands: `/help`, `/car [400-611]`, `/heal`, `/pos`.
+The gamemode has accounts (register/login, saved progress), a delivery job,
+police with wanted levels and jail, and admin commands. The full command list
+is in the [guide](docs/GUIDE.md#4-gameplay).
+
+To make the app connect straight to your server, set the `SERVER_HOST`
+(and optionally `SERVER_PORT`) repository variable and rebuild the APK.
 
 ## Repository Structure
 
