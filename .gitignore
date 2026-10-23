@@ -16,3 +16,6 @@ local.properties
 
 # Rockstar GTA SA engine (libGTASA.so renamed). Copyrighted: never commit it.
 app/src/main/jniLibs/arm64-v8a/libGame.so
+
+# Local server builds
+server/dist/

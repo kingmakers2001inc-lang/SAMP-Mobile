@@ -47,6 +47,29 @@ purchased copy of GTA SA for Android:
 
 Client details: [docs/CLIENT-2.11.md](docs/CLIENT-2.11.md).
 
+## Game server (open.mp)
+
+The `server/` folder holds the **Kingmakers RP** server: a starter gamemode
+(`server/gamemodes/kingmakers.pwn`) for the open-source
+[open.mp](https://open.mp) server. Every change in `server/` is compiled and
+smoke-tested by the **Build Server** action, which uploads a ready-to-run
+Linux server as the `kingmakers-server-linux` artifact.
+
+The server only runs on x86 Linux, not on a phone, so rent a small
+Ubuntu/Debian VPS and log in from Termux (`pkg install openssh`, then
+`ssh root@<vps-ip>`). Then install, or later update, it with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingmakers2001inc-lang/SAMP-Mobile/main/server/install-vps.sh | bash
+```
+
+It runs as the `kingmakers-server` service on UDP port 7777, starts on boot
+and keeps your `config.json` and `scriptfiles/` across updates. To install
+from a branch that is not merged yet, add `BRANCH=<branch-name>` in front of `bash`.
+Players connect to `<vps-ip>:7777`.
+
+Gamemode commands: `/help`, `/car [400-611]`, `/heal`, `/pos`.
+
 ## Repository Structure
 
 The `main` branch contains general project information.
