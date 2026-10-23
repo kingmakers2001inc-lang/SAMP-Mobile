@@ -39,6 +39,17 @@ DbInt(const column[])
 	return value;
 }
 
+DbHouseOwner(house)
+{
+	new DB:db = DB_Open("kingmakers.db"), query[64], value = 0;
+	format(query, sizeof(query), "SELECT owner_id FROM houses WHERE id = %d", house);
+	new DBResult:result = DB_ExecuteQuery(db, query);
+	if (DB_GetRowCount(result) > 0) value = DB_GetFieldInt(result, 0);
+	DB_FreeResultSet(result);
+	DB_Close(db);
+	return value;
+}
+
 forward Step();
 public Step()
 {
@@ -87,27 +98,63 @@ public Step()
 			Check(GetPlayerWantedLevel(gNpc) == 0, "/clearwanted clears the wanted level");
 
 			Check(Cmd("/work") == 1, "/work starts a delivery");
-			Check(Cmd("/nosuchcommand") == 0, "unknown commands are not handled");
-			NPC_SetPos(gNpc, 1500.0, -1700.0, 13.5);
+			Cmd("/quitjob");
+
+			// Bank: only at an ATM
+			Cmd("/deposit 100");
+			Check(GetPlayerMoney(gNpc) == 777, "/deposit only works at an ATM");
+			NPC_SetPos(gNpc, 1490.0, -1761.0, 17.5);
 		}
 		case 4:
 		{
-			NPC_Destroy(gNpc);
+			Cmd("/deposit 700");
+			Check(GetPlayerMoney(gNpc) == 77 && DbInt("bank") == 700, "/deposit moves cash to the bank");
+			Cmd("/deposit 5000");
+			Check(GetPlayerMoney(gNpc) == 77, "cannot deposit more than you carry");
+			Cmd("/withdraw 200");
+			Check(GetPlayerMoney(gNpc) == 277 && DbInt("bank") == 500, "/withdraw moves money back");
+			Cmd("/withdraw abc");
+			Check(GetPlayerMoney(gNpc) == 277, "invalid amounts are rejected");
+
+			// Houses: buy the cheapest one ($25000)
+			Cmd("/setmoney %d 30000", gNpc);
+			NPC_SetPos(gNpc, 2459.4, -1691.6, 13.5);
 		}
 		case 5:
 		{
+			Cmd("/buyhouse");
+			Check(GetPlayerMoney(gNpc) == 5000, "/buyhouse takes the price");
+			Check(DbHouseOwner(0) == DbInt("id"), "the house is saved as yours");
+			Cmd("/enter");
+			// NPCs ignore SetPlayerInterior, so only the private world is checked
+			Check(GetPlayerVirtualWorld(gNpc) == 1000, "/enter takes you inside your house");
+			Cmd("/exit");
+			Check(GetPlayerVirtualWorld(gNpc) == 0, "/exit takes you outside");
+			Cmd("/sellhouse");
+			Check(GetPlayerMoney(gNpc) == 17500 && DbHouseOwner(0) == 0, "/sellhouse refunds half the price");
+			Cmd("/setmoney %d 777", gNpc);
+			Check(Cmd("/nosuchcommand") == 0, "unknown commands are not handled");
+			NPC_SetPos(gNpc, 1500.0, -1700.0, 13.5);
+		}
+		case 6:
+		{
+			NPC_Destroy(gNpc);
+		}
+		case 7:
+		{
+			Check(DbInt("bank") == 500, "bank balance is saved");
 			Check(DbInt("money") == 777, "money is saved on disconnect");
 			Check(floatabs(float(DbInt("CAST(pos_x AS INTEGER)")) - 1500.0) < 1.0, "position is saved on disconnect");
 			gNpc = NPC_Create("KmTestUser");
 		}
-		case 6:
+		case 8:
 		{
 			Check(Cmd("/stats") == 1 && GetPlayerMoney(gNpc) == 0, "commands are blocked before login");
 			Dialog(2, "wrongpass");
 			Dialog(2, "secret123");
 			NPC_Spawn(gNpc);
 		}
-		case 7:
+		case 9:
 		{
 			// NPCs ignore SetPlayerPos, so restoring the position cannot be checked here
 			Check(GetPlayerMoney(gNpc) == 777, "login restores money");

@@ -3,7 +3,8 @@
 // Pawn compiler and packs a ready-to-run server.
 //
 // Features: SQLite accounts (register/login, saved money/score/skin/position),
-// delivery job, police duty with wanted levels and jail, admin commands.
+// bank with ATMs, buyable houses, delivery job, police duty with wanted levels
+// and jail, admin commands.
 
 #include <open.mp>
 #include "sha256.inc"
@@ -34,6 +35,9 @@
 #define JOB_DELIVERY    1
 #define JOB_POLICE      2
 
+#define HOUSE_SELL_BACK 50      // percent of the price refunded by /sellhouse
+#define NO_HOUSE        -1
+
 enum E_PLAYER
 {
 	bool:pLogged,
@@ -51,11 +55,45 @@ enum E_PLAYER
 	Float:pPosA,
 	pInterior,
 	pSavedMoney,    // money from the account, applied on first spawn; -1 after that
+	pBank,
+	pInHouse,       // house the player is inside, or NO_HOUSE
 	bool:pOnDelivery
 }
 
 new gPlayer[MAX_PLAYERS][E_PLAYER];
 new DB:gDb;
+
+new const Float:gAtms[][3] =
+{
+	{ 1490.0, -1761.0, 17.5 },   // City Hall
+	{ 1468.5, -1013.0, 26.8 },   // Bank of Los Santos
+	{ 1833.5, -1860.0, 13.4 },   // Unity Station
+	{ 2421.0, -1657.0, 13.4 },   // Grove Street
+	{ 1206.0, -925.0, 43.0 }     // Vinewood
+};
+
+enum E_HOUSE
+{
+	Float:hX, Float:hY, Float:hZ,       // entrance
+	hPrice,
+	hInterior,
+	Float:hIntX, Float:hIntY, Float:hIntZ
+}
+
+new const gHouses[][E_HOUSE] =
+{
+	{ 2459.4, -1691.6, 13.5,  25000, 1, 223.0, 1289.3, 1082.2 },  // Grove Street
+	{ 2513.8, -1650.3, 14.3,  30000, 1, 223.0, 1289.3, 1082.2 },  // Grove Street
+	{ 2065.1, -1703.5, 14.1,  40000, 2, 225.8, 1240.0, 1082.1 },  // Idlewood
+	{ 1103.6, -1035.6, 31.7,  60000, 2, 225.8, 1240.0, 1082.1 },  // Market
+	{  893.6, -1636.0, 14.9,  90000, 3, 235.5, 1189.2, 1080.3 },  // Verona Beach
+	{ 1298.6, -798.0, 84.1, 500000, 3, 235.5, 1189.2, 1080.3 }   // Vinewood mansion
+};
+
+new gHouseOwner[sizeof(gHouses)];           // account id, 0 = for sale
+new gHouseOwnerName[sizeof(gHouses)][MAX_PLAYER_NAME];
+new gHousePickup[sizeof(gHouses)];
+new Text3D:gHouseLabel[sizeof(gHouses)];
 
 new const Float:gDeliverySpots[][3] =
 {
@@ -179,15 +217,15 @@ SaveAccount(playerid)
 	// Until the first spawn the client has not received the saved money yet
 	new bool:spawnedOnce = gPlayer[playerid][pSavedMoney] == -1, query[256];
 	format(query, sizeof(query),
-		"UPDATE accounts SET money = %d, score = %d, skin = %d, admin = %d, wanted = %d, jail = %d WHERE id = %d",
-		spawnedOnce ? GetPlayerMoney(playerid) : gPlayer[playerid][pSavedMoney],
+		"UPDATE accounts SET money = %d, bank = %d, score = %d, skin = %d, admin = %d, wanted = %d, jail = %d WHERE id = %d",
+		spawnedOnce ? GetPlayerMoney(playerid) : gPlayer[playerid][pSavedMoney], gPlayer[playerid][pBank],
 		GetPlayerScore(playerid), gPlayer[playerid][pSkin], gPlayer[playerid][pAdmin],
 		gPlayer[playerid][pWanted], gPlayer[playerid][pJail], gPlayer[playerid][pAccountId]);
 	DB_FreeResultSet(DB_ExecuteQuery(gDb, query));
 
 	// Only store the position while the player is alive in the world
 	new PLAYER_STATE:playerState = GetPlayerState(playerid);
-	if (spawnedOnce && gPlayer[playerid][pJail] == 0
+	if (spawnedOnce && gPlayer[playerid][pJail] == 0 && gPlayer[playerid][pInHouse] == NO_HOUSE
 		&& playerState != PLAYER_STATE_WASTED && playerState != PLAYER_STATE_SPECTATING)
 	{
 		new Float:x, Float:y, Float:z, Float:a;
@@ -218,6 +256,7 @@ LoadAccount(playerid, DBResult:result)
 {
 	gPlayer[playerid][pAccountId] = DB_GetFieldIntByName(result, "id");
 	gPlayer[playerid][pSavedMoney] = DB_GetFieldIntByName(result, "money");
+	gPlayer[playerid][pBank] = DB_GetFieldIntByName(result, "bank");
 	gPlayer[playerid][pSkin] = DB_GetFieldIntByName(result, "skin");
 	gPlayer[playerid][pAdmin] = DB_GetFieldIntByName(result, "admin");
 	gPlayer[playerid][pWanted] = DB_GetFieldIntByName(result, "wanted");
@@ -295,6 +334,124 @@ StartDelivery(playerid)
 	SendClientMessage(playerid, COLOR_INFO, "Deliver the package to the red marker on your map.");
 }
 
+// --- Bank -------------------------------------------------------------------
+
+bool:IsNearAtm(playerid)
+{
+	for (new i = 0; i < sizeof(gAtms); i++)
+	{
+		if (IsPlayerInRangeOfPoint(playerid, 4.0, gAtms[i][0], gAtms[i][1], gAtms[i][2])) return true;
+	}
+	return false;
+}
+
+// Parses a positive whole amount of money; returns 0 if invalid.
+ParseAmount(const word[])
+{
+	if (!word[0] || strlen(word) > 9) return 0;
+	for (new i = 0; word[i]; i++)
+	{
+		if (word[i] < '0' || word[i] > '9') return 0;
+	}
+	return strval(word);
+}
+
+// --- Houses -----------------------------------------------------------------
+
+PlayerHouse(playerid)
+{
+	for (new h = 0; h < sizeof(gHouses); h++)
+	{
+		if (gHouseOwner[h] != 0 && gHouseOwner[h] == gPlayer[playerid][pAccountId]) return h;
+	}
+	return NO_HOUSE;
+}
+
+NearestHouse(playerid)
+{
+	for (new h = 0; h < sizeof(gHouses); h++)
+	{
+		if (IsPlayerInRangeOfPoint(playerid, 3.0, gHouses[h][hX], gHouses[h][hY], gHouses[h][hZ])) return h;
+	}
+	return NO_HOUSE;
+}
+
+UpdateHouseMarker(h)
+{
+	new text[128];
+	if (gHousePickup[h]) DestroyPickup(gHousePickup[h]);
+	if (gHouseLabel[h] != Text3D:INVALID_3DTEXT_ID) Delete3DTextLabel(gHouseLabel[h]);
+
+	if (gHouseOwner[h] == 0)
+	{
+		gHousePickup[h] = CreatePickup(1273, 1, gHouses[h][hX], gHouses[h][hY], gHouses[h][hZ]);
+		format(text, sizeof(text), "House #%d\nFor sale: $%d\n/buyhouse", h + 1, gHouses[h][hPrice]);
+		gHouseLabel[h] = Create3DTextLabel(text, 0x9ACD32FF, gHouses[h][hX], gHouses[h][hY], gHouses[h][hZ] + 0.8, 20.0, 0);
+	}
+	else
+	{
+		gHousePickup[h] = CreatePickup(1272, 1, gHouses[h][hX], gHouses[h][hY], gHouses[h][hZ]);
+		format(text, sizeof(text), "House #%d\nOwner: %s", h + 1, gHouseOwnerName[h]);
+		gHouseLabel[h] = Create3DTextLabel(text, 0x33CCFFFF, gHouses[h][hX], gHouses[h][hY], gHouses[h][hZ] + 0.8, 20.0, 0);
+	}
+}
+
+SetHouseOwner(h, accountId, const name[])
+{
+	new query[96];
+	gHouseOwner[h] = accountId;
+	gHouseOwnerName[h][0] = '\0';
+	strcat(gHouseOwnerName[h], name, MAX_PLAYER_NAME);
+	if (accountId == 0) format(query, sizeof(query), "DELETE FROM houses WHERE id = %d", h);
+	else format(query, sizeof(query), "INSERT OR REPLACE INTO houses (id, owner_id) VALUES (%d, %d)", h, accountId);
+	DB_FreeResultSet(DB_ExecuteQuery(gDb, query));
+	UpdateHouseMarker(h);
+}
+
+LoadHouses()
+{
+	for (new h = 0; h < sizeof(gHouses); h++)
+	{
+		gHouseLabel[h] = Text3D:INVALID_3DTEXT_ID;
+	}
+	new DBResult:result = DB_ExecuteQuery(gDb,
+		"SELECT houses.id, houses.owner_id, accounts.name FROM houses JOIN accounts ON accounts.id = houses.owner_id");
+	for (new i = DB_GetRowCount(result); i > 0; i--)
+	{
+		new h = DB_GetFieldInt(result, 0);
+		if (0 <= h < sizeof(gHouses))
+		{
+			gHouseOwner[h] = DB_GetFieldInt(result, 1);
+			DB_GetFieldString(result, 2, gHouseOwnerName[h], MAX_PLAYER_NAME);
+		}
+		DB_SelectNextRow(result);
+	}
+	DB_FreeResultSet(result);
+	for (new h = 0; h < sizeof(gHouses); h++)
+	{
+		UpdateHouseMarker(h);
+	}
+}
+
+EnterHouse(playerid, h)
+{
+	gPlayer[playerid][pInHouse] = h;
+	SetPlayerInterior(playerid, gHouses[h][hInterior]);
+	SetPlayerVirtualWorld(playerid, 1000 + h);
+	SetPlayerPos(playerid, gHouses[h][hIntX], gHouses[h][hIntY], gHouses[h][hIntZ]);
+	SetCameraBehindPlayer(playerid);
+}
+
+LeaveHouse(playerid)
+{
+	new h = gPlayer[playerid][pInHouse];
+	gPlayer[playerid][pInHouse] = NO_HOUSE;
+	SetPlayerInterior(playerid, 0);
+	SetPlayerVirtualWorld(playerid, 0);
+	SetPlayerPos(playerid, gHouses[h][hX], gHouses[h][hY] - 1.5, gHouses[h][hZ]);
+	SetCameraBehindPlayer(playerid);
+}
+
 // --- Police -----------------------------------------------------------------
 
 GoOffDuty(playerid)
@@ -336,6 +493,25 @@ public OnGameModeInit()
 			pos_z REAL NOT NULL DEFAULT 0, pos_a REAL NOT NULL DEFAULT 0,\
 			interior INTEGER NOT NULL DEFAULT 0)"));
 
+	// Columns added after the first release
+	new DBResult:columns = DB_ExecuteQuery(gDb, "SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name = 'bank'");
+	new bool:hasBank = DB_GetFieldInt(columns, 0) > 0;
+	DB_FreeResultSet(columns);
+	if (!hasBank)
+	{
+		DB_FreeResultSet(DB_ExecuteQuery(gDb, "ALTER TABLE accounts ADD COLUMN bank INTEGER NOT NULL DEFAULT 0"));
+	}
+	DB_FreeResultSet(DB_ExecuteQuery(gDb,
+		"CREATE TABLE IF NOT EXISTS houses (id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL)"));
+	LoadHouses();
+
+	// ATMs
+	for (new i = 0; i < sizeof(gAtms); i++)
+	{
+		CreatePickup(1274, 1, gAtms[i][0], gAtms[i][1], gAtms[i][2]);
+		Create3DTextLabel("ATM\n/balance /deposit /withdraw", 0x9ACD32FF, gAtms[i][0], gAtms[i][1], gAtms[i][2] + 0.8, 15.0, 0);
+	}
+
 	// Civilian skins at Los Santos City Hall
 	new const skins[] = { 2, 7, 21, 23, 26, 29, 46, 59, 60, 98, 12, 40, 41, 56, 91, 93 };
 	for (new i = 0; i < sizeof(skins); i++)
@@ -372,6 +548,7 @@ public OnPlayerConnect(playerid)
 	static const empty[E_PLAYER];
 	gPlayer[playerid] = empty;
 	gPlayer[playerid][pSkin] = -1;
+	gPlayer[playerid][pInHouse] = NO_HOUSE;
 
 	new msg[96];
 	format(msg, sizeof(msg), "%s joined Kingmakers RP.", PlayerName(playerid));
@@ -515,6 +692,8 @@ public OnPlayerSpawn(playerid)
 	}
 
 	SetPlayerInterior(playerid, 0);
+	SetPlayerVirtualWorld(playerid, 0);
+	gPlayer[playerid][pInHouse] = NO_HOUSE;
 
 	// First spawn after login: restore the saved state
 	if (gPlayer[playerid][pSavedMoney] != -1)
@@ -532,6 +711,15 @@ public OnPlayerSpawn(playerid)
 			SetPlayerPos(playerid, gPlayer[playerid][pPosX], gPlayer[playerid][pPosY], gPlayer[playerid][pPosZ]);
 			SetPlayerFacingAngle(playerid, gPlayer[playerid][pPosA]);
 			SetCameraBehindPlayer(playerid);
+		}
+	}
+	else
+	{
+		// Later spawns (after dying): at home if the player owns a house
+		new h = PlayerHouse(playerid);
+		if (h != NO_HOUSE)
+		{
+			SetPlayerPos(playerid, gHouses[h][hX], gHouses[h][hY] - 1.5, gHouses[h][hZ]);
 		}
 	}
 
@@ -636,6 +824,8 @@ public OnPlayerCommandText(playerid, cmdtext[])
 	{
 		SendClientMessage(playerid, COLOR_INFO, "General: /stats, /car [400-611], /heal, /pos, /help");
 		SendClientMessage(playerid, COLOR_INFO, "Jobs: /work (delivery), /police (go on/off duty), /arrest [id], /quitjob");
+		SendClientMessage(playerid, COLOR_INFO, "Bank (at an ATM): /balance, /deposit, /withdraw | /transfer [id] [amount]");
+		SendClientMessage(playerid, COLOR_INFO, "Houses: /buyhouse, /sellhouse, /enter, /exit");
 		if (gPlayer[playerid][pAdmin] > 0)
 		{
 			SendClientMessage(playerid, COLOR_ADMIN, "Admin: /goto, /gethere, /kick, /clearwanted, /announce (1+), /ban (2+), /setmoney, /makeadmin (3)");
@@ -646,10 +836,111 @@ public OnPlayerCommandText(playerid, cmdtext[])
 	if (!strcmp(cmd, "/stats", true))
 	{
 		static const jobs[][] = { "None", "Delivery", "Police" };
-		format(msg, sizeof(msg), "Money: $%d | Score: %d | Wanted: %d | Job: %s | Admin: %d",
-			GetPlayerMoney(playerid), GetPlayerScore(playerid), gPlayer[playerid][pWanted],
+		format(msg, sizeof(msg), "Money: $%d | Bank: $%d | Score: %d | Wanted: %d | Job: %s | Admin: %d",
+			GetPlayerMoney(playerid), gPlayer[playerid][pBank], GetPlayerScore(playerid), gPlayer[playerid][pWanted],
 			jobs[gPlayer[playerid][pJob]], gPlayer[playerid][pAdmin]);
 		SendClientMessage(playerid, COLOR_INFO, msg);
+		return 1;
+	}
+
+	// --- Bank ---
+
+	if (!strcmp(cmd, "/balance", true) || !strcmp(cmd, "/deposit", true) || !strcmp(cmd, "/withdraw", true))
+	{
+		if (!IsNearAtm(playerid)) return SendClientMessage(playerid, COLOR_ERROR, "Go to an ATM (green $ on the ground)."), 1;
+		if (!strcmp(cmd, "/deposit", true) || !strcmp(cmd, "/withdraw", true))
+		{
+			new bool:isDeposit = !strcmp(cmd, "/deposit", true);
+			GetWord(cmdtext, idx, word);
+			new amount = ParseAmount(word);
+			if (amount <= 0) return SendClientMessage(playerid, COLOR_ERROR, isDeposit ? "Usage: /deposit [amount]" : "Usage: /withdraw [amount]"), 1;
+			if (isDeposit)
+			{
+				if (amount > GetPlayerMoney(playerid)) return SendClientMessage(playerid, COLOR_ERROR, "You don't have that much cash."), 1;
+				GivePlayerMoney(playerid, -amount);
+				gPlayer[playerid][pBank] += amount;
+			}
+			else
+			{
+				if (amount > gPlayer[playerid][pBank]) return SendClientMessage(playerid, COLOR_ERROR, "You don't have that much in the bank."), 1;
+				gPlayer[playerid][pBank] -= amount;
+				GivePlayerMoney(playerid, amount);
+			}
+			SaveAccount(playerid);
+		}
+		format(msg, sizeof(msg), "Bank balance: $%d | Cash: $%d", gPlayer[playerid][pBank], GetPlayerMoney(playerid));
+		SendClientMessage(playerid, COLOR_SUCCESS, msg);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/transfer", true))
+	{
+		GetWord(cmdtext, idx, word);
+		new target = ParsePlayer(word);
+		GetWord(cmdtext, idx, word);
+		new amount = ParseAmount(word);
+		if (target == INVALID_PLAYER_ID || target == playerid || !gPlayer[target][pLogged] || amount <= 0)
+		{
+			return SendClientMessage(playerid, COLOR_ERROR, "Usage: /transfer [player id] [amount]"), 1;
+		}
+		if (amount > gPlayer[playerid][pBank]) return SendClientMessage(playerid, COLOR_ERROR, "You don't have that much in the bank."), 1;
+		gPlayer[playerid][pBank] -= amount;
+		gPlayer[target][pBank] += amount;
+		SaveAccount(playerid);
+		SaveAccount(target);
+		format(msg, sizeof(msg), "You sent $%d to %s.", amount, PlayerName(target));
+		SendClientMessage(playerid, COLOR_SUCCESS, msg);
+		format(msg, sizeof(msg), "%s sent $%d to your bank account.", PlayerName(playerid), amount);
+		SendClientMessage(target, COLOR_SUCCESS, msg);
+		return 1;
+	}
+
+	// --- Houses ---
+
+	if (!strcmp(cmd, "/buyhouse", true))
+	{
+		new h = NearestHouse(playerid);
+		if (h == NO_HOUSE) return SendClientMessage(playerid, COLOR_ERROR, "Stand at a house entrance (house icon)."), 1;
+		if (gHouseOwner[h] != 0) return SendClientMessage(playerid, COLOR_ERROR, "This house is not for sale."), 1;
+		if (PlayerHouse(playerid) != NO_HOUSE) return SendClientMessage(playerid, COLOR_ERROR, "You already own a house. /sellhouse it first."), 1;
+		if (GetPlayerMoney(playerid) < gHouses[h][hPrice]) return SendClientMessage(playerid, COLOR_ERROR, "You don't have enough cash."), 1;
+		GivePlayerMoney(playerid, -gHouses[h][hPrice]);
+		SetHouseOwner(h, gPlayer[playerid][pAccountId], PlayerName(playerid));
+		SaveAccount(playerid);
+		format(msg, sizeof(msg), "You bought house #%d for $%d! Use /enter to go inside. You respawn here after dying.", h + 1, gHouses[h][hPrice]);
+		SendClientMessage(playerid, COLOR_SUCCESS, msg);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/sellhouse", true))
+	{
+		new h = PlayerHouse(playerid);
+		if (h == NO_HOUSE) return SendClientMessage(playerid, COLOR_ERROR, "You don't own a house."), 1;
+		if (gPlayer[playerid][pInHouse] == h) LeaveHouse(playerid);
+		new refund = gHouses[h][hPrice] * HOUSE_SELL_BACK / 100;
+		SetHouseOwner(h, 0, "");
+		GivePlayerMoney(playerid, refund);
+		SaveAccount(playerid);
+		format(msg, sizeof(msg), "You sold your house for $%d.", refund);
+		SendClientMessage(playerid, COLOR_SUCCESS, msg);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/enter", true))
+	{
+		new h = NearestHouse(playerid);
+		if (h == NO_HOUSE) return SendClientMessage(playerid, COLOR_ERROR, "Stand at a house entrance (house icon)."), 1;
+		if (gHouseOwner[h] != gPlayer[playerid][pAccountId]) return SendClientMessage(playerid, COLOR_ERROR, "This is not your house."), 1;
+		if (IsPlayerInAnyVehicle(playerid)) return SendClientMessage(playerid, COLOR_ERROR, "Get out of the vehicle first."), 1;
+		EnterHouse(playerid, h);
+		SendClientMessage(playerid, COLOR_INFO, "Welcome home. Type /exit to leave.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/exit", true))
+	{
+		if (gPlayer[playerid][pInHouse] == NO_HOUSE) return SendClientMessage(playerid, COLOR_ERROR, "You are not inside a house."), 1;
+		LeaveHouse(playerid);
 		return 1;
 	}
 

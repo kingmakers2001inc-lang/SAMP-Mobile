@@ -131,8 +131,9 @@ Remove the variables and rebuild to go back to `settings.ini`.
 
 ## 4. Gameplay
 
-Players register with a password the first time and log in after that. Money,
-score, skin, position, wanted level, jail time and admin level are saved.
+Players register with a password the first time and log in after that. Cash,
+bank balance, house, score, skin, position, wanted level, jail time and admin
+level are saved.
 
 | Command | Who | What it does |
 |---|---|---|
@@ -144,6 +145,10 @@ score, skin, position, wanted level, jail time and admin level are saved.
 | `/police` | not wanted | Go on or off police duty |
 | `/arrest [id]` | police | Jail a wanted player within 5 m (60 s per star, $500 per star reward) |
 | `/quitjob` | everyone | Leave your job |
+| `/balance`, `/deposit [amount]`, `/withdraw [amount]` | at an ATM | Bank. ATMs are the green $ icons (City Hall, Bank of LS, Unity Station, Grove Street, Vinewood) |
+| `/transfer [id] [amount]` | everyone | Send money from your bank to another player's bank |
+| `/buyhouse`, `/sellhouse` | at a house | Buy a house for sale (green house icon, $25,000-$500,000); selling refunds half |
+| `/enter`, `/exit` | house owner | Go into and out of your private house. After dying you respawn at home |
 | `/goto`, `/gethere [id]` | admin 1+ | Teleport |
 | `/kick [id] [reason]`, `/clearwanted [id]`, `/announce [text]` | admin 1+ | Moderation |
 | `/ban [id] [reason]` | admin 2+ | Ban |
