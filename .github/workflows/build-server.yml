@@ -1,0 +1,39 @@
+name: Build Server
+
+on:
+  push:
+    paths: ["server/**", ".github/workflows/build-server.yml"]
+  pull_request:
+    paths: ["server/**", ".github/workflows/build-server.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install 32-bit libraries
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libc6:i386 libstdc++6:i386 libatomic1:i386
+
+      - name: Build server
+        run: server/build.sh "$RUNNER_TEMP/kingmakers-server"
+
+      - name: Smoke test
+        run: |
+          cd "$RUNNER_TEMP/kingmakers-server"
+          timeout 10 ./omp-server > server.log 2>&1 || true
+          cat server.log
+          grep -q "Kingmakers RP gamemode loaded" server.log
+          rm -f server.log log.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kingmakers-server-linux
+          path: ${{ runner.temp }}/kingmakers-server
+          if-no-files-found: error
