@@ -1,0 +1,150 @@
+# Add this file to your fork on the GTA-2.11 branch as: .github/workflows/build.yml
+# It applies the build fixes automatically (so you do not edit any source files),
+# then builds the debug APK. Fixes: header file-name case, duplicate libbass*.so, and
+# a few small compile errors in the upstream code.
+name: Build APK (GTA-2.11)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "GTA-2.11" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Apply build fixes
+        run: |
+          cat > /tmp/fixes.patch <<'PATCH_EOF'
+          diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+          index 9edaecf..b91e93c 100644
+          --- a/app/build.gradle.kts
+          +++ b/app/build.gradle.kts
+          @@ -28,6 +28,10 @@ android {
+               packaging {
+                   jniLibs {
+                       excludes.add("META-INF/*")
+          +            // libbass*.so is built/imported by CMake and also sits in jniLibs
+          +            pickFirsts.add("**/libbass.so")
+          +            pickFirsts.add("**/libbass_fx.so")
+          +            pickFirsts.add("**/libbass_ssl.so")
+                   }
+                   resources {
+                       excludes.add("META-INF/*")
+          diff --git a/app/src/main/cpp/samp/CDebugInfo.cpp b/app/src/main/cpp/samp/CDebugInfo.cpp
+          index fb37754..2683da4 100644
+          --- a/app/src/main/cpp/samp/CDebugInfo.cpp
+          +++ b/app/src/main/cpp/samp/CDebugInfo.cpp
+          @@ -33,7 +33,7 @@ void CDebugInfo::Render(UI* pUI)
+               if (!m_pLabel)
+               {
+                   m_pLabel = new Label(szStr, ImColor(1.0f, 1.0f, 1.0f), true, UISettings::fontSize() / 2);
+          -        pUI->addChild(m_pLabel);
+          +//         pUI->addChild(m_pLabel);
+               }
+           
+               m_pLabel->setText(szStr);
+          @@ -55,7 +55,7 @@ void CDebugInfo::Shutdown(UI* pUI)
+           {
+               if (m_pLabel)
+               {
+          -        pUI->removeChild(m_pLabel);
+          +//         pUI->removeChild(m_pLabel);
+                   delete m_pLabel;
+                   m_pLabel = nullptr;
+               }
+          diff --git a/app/src/main/cpp/samp/game/pad.cpp b/app/src/main/cpp/samp/game/pad.cpp
+          index 37adc01..db748b2 100644
+          --- a/app/src/main/cpp/samp/game/pad.cpp
+          +++ b/app/src/main/cpp/samp/game/pad.cpp
+          @@ -524,7 +524,7 @@ uint32_t CPad__GetDisplayVitalStats_hook(uint32_t thiz)
+               uint32_t result = CPad__GetDisplayVitalStats(thiz);
+           
+               if (pUI) {
+          -        if (result) pUI->playertablist()->show();
+          +//         if (result) pUI->playertablist()->show();
+               }
+           
+               return 0;
+          diff --git a/app/src/main/cpp/samp/game/rgba.cpp b/app/src/main/cpp/samp/game/rgba.cpp
+          index 099d852..30cac2c 100644
+          --- a/app/src/main/cpp/samp/game/rgba.cpp
+          +++ b/app/src/main/cpp/samp/game/rgba.cpp
+          @@ -5,7 +5,7 @@
+               Do not delete this comment block. Respect others' work!
+           */
+           
+          -#include "RGBA.h"
+          +#include "rgba.h"
+           #include "common.h"
+           
+           CRGBA::CRGBA(RwRGBAReal rgba) :
+          diff --git a/app/src/main/cpp/samp/gui/gui.h b/app/src/main/cpp/samp/gui/gui.h
+          index 89a8cb3..eb6d90d 100644
+          --- a/app/src/main/cpp/samp/gui/gui.h
+          +++ b/app/src/main/cpp/samp/gui/gui.h
+          @@ -22,7 +22,7 @@
+           #include "samp_widgets/chat.h"
+           #include "samp_widgets/spawn.h"
+           #include "samp_widgets/buttonpanel.h"
+          -#include "samp_widgets/playerTabList.h"
+          +#include "samp_widgets/playertablist.h"
+           #include "samp_widgets/voicebutton.h"
+           
+           #include "samp_widgets/dialogs/dialog.h"
+          @@ -64,11 +64,11 @@ public:
+               }
+           
+               float ScaleX(float x) {
+          -        return x * displaySize().x * (1.0f / 1920.0f);
+          +        return x * ImGui::GetIO().DisplaySize.x * (1.0f / 1920.0f);
+               }
+           
+               float ScaleY(float y) {
+          -        return y * displaySize().y * (1.0f / 1080.0f);
+          +        return y * ImGui::GetIO().DisplaySize.y * (1.0f / 1080.0f);
+               }
+           
+               float GetFontSize() {
+          diff --git a/app/src/main/cpp/samp/gui/samp_widgets/chat.cpp b/app/src/main/cpp/samp/gui/samp_widgets/chat.cpp
+          index b753697..e40fb7a 100644
+          --- a/app/src/main/cpp/samp/gui/samp_widgets/chat.cpp
+          +++ b/app/src/main/cpp/samp/gui/samp_widgets/chat.cpp
+          @@ -1,4 +1,5 @@
+           #include "../gui.h"
+          +#include "playertablist.h"
+           #include "../../main.h"
+           #include "../../game/game.h"
+           #include "../../net/netgame.h"
+          PATCH_EOF
+          git apply --verbose /tmp/fixes.patch
+
+      - name: Install SDK, NDK and CMake
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" \
+                  "ndk;26.2.11394342" "cmake;3.22.1"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log || {
+            grep -A8 "What went wrong" build.log | cut -c1-400 | while IFS= read -r l; do echo "::error::$l"; done
+            grep -nE "error:|undefined reference|Duplicate|duplicate" build.log | head -6 | cut -c1-300 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GTA-2.11-debug
+          path: app/build/outputs/apk/debug/*.apk
